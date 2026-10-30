@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Crack the Password</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);color-scheme:dark;--bg:#0b0f1a;--fg:#eef1f8;--ac:#ffcc33}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,Arial,sans-serif;overflow:hidden}
+#c{position:fixed;inset:0;width:100%;height:100%;touch-action:none;display:block}
+#top{position:fixed;top:env(safe-area-inset-top,0px);left:0;right:0;display:flex;justify-content:space-between;align-items:center;padding:8px 10px;pointer-events:none;font-size:13px;text-shadow:0 1px 4px #000}
+#top>*{pointer-events:auto}
+#tb{background:var(--ac);color:#111;border:0;border-radius:18px;padding:8px 14px;font-weight:700;font-size:14px}
+#tn{background:#000a;border:2px solid var(--ac);border-radius:14px;padding:5px 10px;font-weight:700}
+#bar{position:fixed;bottom:0;left:0;right:0;display:flex;gap:8px;justify-content:center;padding:10px 10px calc(10px + env(safe-area-inset-bottom,0px))}
+#bar button{flex:1;max-width:150px;padding:11px 4px;border-radius:12px;border:2px solid #3a4666;background:#141b2cdd;color:var(--fg);font-size:14px}
+#bar button.on{background:var(--ac);color:#111;border-color:var(--ac);font-weight:700}
+#toast{position:fixed;left:50%;top:26%;transform:translateX(-50%);background:#000d;border:2px solid var(--ac);border-radius:14px;padding:12px 18px;font-size:16px;opacity:0;transition:opacity .25s;pointer-events:none;text-align:center;max-width:88vw}
+#toast.show{opacity:1}
+#toast b{color:var(--ac);font-size:34px;letter-spacing:6px}
+.ov{position:fixed;inset:0;background:#0b0f1af2;display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;z-index:5}
+.ov.show{display:flex}
+.ov h2{margin:0 0 10px}
+.tbtn{width:200px;margin:6px;padding:14px;border-radius:12px;border:0;font-size:17px;font-weight:700;color:#fff}
+#cp{position:fixed;left:10px;right:10px;bottom:calc(72px + env(safe-area-inset-bottom,0px));background:#0b0f1af0;border:2px solid var(--ac);border-radius:14px;padding:12px;text-align:center;display:none;z-index:4;max-width:420px;margin:0 auto}
+#cp.show{display:block}
+#cp input{width:120px;font-size:24px;text-align:center;letter-spacing:6px;padding:8px;border-radius:8px;border:1px solid #3a4666;background:#141b2c;color:var(--fg)}
+#cp button{padding:10px 16px;font-size:16px;border:0;border-radius:8px;background:var(--ac);color:#111;font-weight:700;margin-left:6px}
+#cp button:disabled{opacity:.5}
+#cm{margin-top:8px;min-height:20px;font-size:14px}
+#ld{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:#0b0f1acc;z-index:3;font-size:18px}
+#ld.show{display:flex}
+.dc{position:fixed;border:2px solid #0f0;border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;font-size:10px;color:#0f0;display:none;z-index:2;text-shadow:0 0 3px #000}
+#dbg{position:fixed;top:56px;left:8px;right:8px;background:#000c;border:1px solid #0f0;color:#0f0;padding:8px;font:12px monospace;display:none;z-index:6}
+#dbg button{margin-left:8px}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="top"><div id="tn"></div><button id="tb">🔑 Enter code</button></div>
+<div id="toast"></div>
+<div id="dbg"><span id="dt">Tap anywhere to get coordinates</span><button id="dcopy">Copy</button></div>
+<div id="cp"><input id="ci" inputmode="numeric" maxlength="3" placeholder="000"><button id="cg">Unlock</button><div id="cm"></div></div>
+<div id="bar"></div>
+<div id="ld">Loading room…</div>
+<div class="ov" id="pick"><h2>Which team are you?</h2><div id="pb"></div></div>
+<div class="ov" id="win"><h2 style="font-size:30px">🎉 You found it!</h2><div>Show this screen to your coordinator.</div><div id="nx" style="margin-top:18px;font-size:19px;border:2px solid var(--ac);border-radius:14px;padding:14px"></div></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* ================= CONFIG: edit here ================= */
+const IMGS=["room1.jpg", "room2.jpg", "room3.jpg"];
+/* Team codes, hiding object (room index 0-2 + object id) and next clue */
+const TEAMS={
+ red:   {c:"#e53935",code:"482",room:0,obj:"alarm", next:"Next clue (Red): Play mini games and get the the next code from Red Master."},
+ yellow:{c:"#f9a825",code:"915",room:1,obj:"skull", next:"Next clue (Yellow): Play mini games and get the the next code from Yellow Master."},
+ blue:  {c:"#1e88e5",code:"367",room:2,obj:"chest", next:"Next clue (Blue): Play mini games and get the the next code from Blue Master."},
+ green: {c:"#43a047",code:"750",room:1,obj:"globe", next:"Next clue (Green): Play mini games and get the the next code from Green Master."}
+};
+/* Hotspots: [id, label, x, y, radius] in pixels of a 2576x1288 image. Use #debug to fix positions. */
+const ROOMS=[
+ {name:"Bedroom",icon:"🛏️",hs:[
+  ["teddy","teddy bear",1335,640,60],["guitar","guitar",865,640,70],["wallclock","wall clock",1517,418,55],["alarm","alarm clock",1555,630,40],
+  ["backpack","backpack",940,920,80],["laptop","laptop",2290,640,70],["dresser","chest of drawers",400,640,100],["mirror","mirror",90,540,60],
+  ["headphones","headphones",2240,990,55],["redshoe","red sneaker",1780,1070,70],["bookshelf","bookshelf",1715,590,100],["toybox","toy box",1920,700,70],
+  ["lamp","bedside lamp",990,580,50],["blanket","plaid blanket",1540,830,90],["chair","chair with clothes",600,740,80],["poster","concert poster",1255,390,90],
+  ["coins","coins",2330,1150,50],["jeans","jeans",600,1030,80],["pillow","pillows",1250,630,70],["towel","towel",1140,1100,80]]},
+ {name:"Library",icon:"📚",hs:[
+  ["grandclock","grandfather clock",1615,370,70],["globe","globe",1115,690,75],["skull","skull",1970,715,45],["typewriter","typewriter",225,650,60],
+  ["phone","old telephone",105,770,50],["telescope","telescope",1850,480,70],["trunk","trunk",2200,860,90],["stool","stool",1460,1100,70],
+  ["teapot","teapot",320,900,60],["map","world map",2180,450,100],["fireplace","fireplace",1300,650,80],["ladder","ladder",820,490,70],
+  ["armchair","leather armchair",680,760,90],["candle","candle",1545,710,35],["crate","crate of scrolls",985,1060,70],["mantelclock","mantel clock",1260,450,45],
+  ["portrait","portrait",195,460,70],["bust","bust statue",1470,430,40],["rug","rolled carpet",2440,700,60],["lamp2","lamp",2105,590,50]]},
+ {name:"Hall",icon:"🛋️",hs:[
+  ["wallclock","wall clock",1688,422,70],["guitar","guitar",545,640,75],["cushion","yellow cushion",985,700,50],["remote","remote control",1140,903,35],
+  ["chest","wooden chest",2430,1030,110],["sneakers","sneakers",750,1080,70],["basket","laundry basket",110,1080,90],["tv","television",180,590,100],
+  ["fan","standing fan",1935,580,60],["bike","bicycle",2300,620,60],["car","toy car",1460,1165,50],["chandelier","chandelier",1260,200,90],
+  ["drawers","sideboard drawers",1600,720,90],["mantel","table clock",1735,570,40],["keyboard","keyboard piano",690,625,70],["armchair2","armchair",1750,790,90],
+  ["flowers","flowers",1080,720,60],["controller","game controllers",260,915,50],["blanket2","blue blanket",1630,1070,80],["coat","coat rack",2470,500,80]]}
+];
+/* ===================================================== */
+const W=2576,H=1288,P2=Math.PI*2,DEG=180/Math.PI;
+const q=location.hash.slice(1).toLowerCase(),DBG=q==="debug";
+let team=TEAMS[q]?q:null;
+if(q==="reset"){try{Object.keys(TEAMS).forEach(k=>localStorage.removeItem("ctp_"+k))}catch(e){}location.hash="";}
+
+const $=id=>document.getElementById(id);
+function dirOf(x,y){const p=x/W*P2,t=y/H*Math.PI;return new THREE.Vector3(Math.cos(p)*Math.sin(t),Math.cos(t),Math.sin(p)*Math.sin(t))}
+function pxOf(d){let u=Math.atan2(d.z,d.x)/P2;if(u<0)u+=1;return [Math.round(u*W),Math.round(Math.acos(Math.max(-1,Math.min(1,d.y)))/Math.PI*H)]}
+
+const R=new THREE.WebGLRenderer({canvas:$("c"),antialias:false});
+R.setPixelRatio(Math.min(devicePixelRatio,2));
+const S=new THREE.Scene(),cam=new THREE.PerspectiveCamera(75,1,.1,1100);
+const g=new THREE.SphereGeometry(500,64,40);g.scale(-1,1,1);
+const mat=new THREE.MeshBasicMaterial({color:0x111111});
+S.add(new THREE.Mesh(g,mat));
+const tex={},tl=new THREE.TextureLoader();
+function load(i,cb){
+ if(tex[i]){cb&&cb();return}
+ tl.load(IMGS[i],t=>{t.generateMipmaps=false;t.minFilter=THREE.LinearFilter;t.magFilter=THREE.LinearFilter;tex[i]=t;cb&&cb()},undefined,()=>{$("ld").textContent="Could not load image. Check your internet and refresh."});
+}
+let cur=-1,yaw=0,pitch=0,dots=[];
+function show(i){
+ $("ld").classList.add("show");
+ load(i,()=>{
+  cur=i;mat.map=tex[i];mat.color.set(0xffffff);mat.needsUpdate=true;
+  $("ld").classList.remove("show");
+  [...$("bar").children].forEach((b,k)=>b.classList.toggle("on",k===i));
+  buildDots();
+  setTimeout(()=>{for(let k=0;k<3;k++)if(!tex[k]){load(k);break}},1500);
+ });
+}
+function buildDots(){
+ dots.forEach(d=>d.e.remove());dots=[];
+ if(!DBG)return;
+ ROOMS[cur].hs.forEach(h=>{const e=document.createElement("div");e.className="dc";e.textContent=h[0];document.body.appendChild(e);dots.push({e,h,d:dirOf(h[2],h[3])})});
+}
+ROOMS.forEach((r,i)=>{const b=document.createElement("button");b.textContent=r.icon+" "+r.name;b.onclick=()=>show(i);$("bar").appendChild(b)});
+
+/* controls */
+const ptr=new Map();let moved=0,pd=0;
+const cv=$("c");
+cv.addEventListener("pointerdown",e=>{cv.setPointerCapture(e.pointerId);ptr.set(e.pointerId,{x:e.clientX,y:e.clientY});if(ptr.size===1)moved=0;if(ptr.size===2)pd=dist()});
+cv.addEventListener("pointermove",e=>{
+ const p=ptr.get(e.pointerId);if(!p)return;
+ const dx=e.clientX-p.x,dy=e.clientY-p.y;p.x=e.clientX;p.y=e.clientY;
+ if(ptr.size===2){const d=dist();cam.fov=Math.max(35,Math.min(90,cam.fov-(d-pd)*.1));pd=d;cam.updateProjectionMatrix();moved=99;return}
+ moved+=Math.abs(dx)+Math.abs(dy);
+ const k=cam.fov/innerHeight;yaw+=dx*k/DEG;pitch=Math.max(-1.45,Math.min(1.45,pitch+dy*k/DEG));
+});
+cv.addEventListener("pointerup",e=>{const was=ptr.size;ptr.delete(e.pointerId);if(was===1&&moved<8)tap(e.clientX,e.clientY)});
+cv.addEventListener("pointercancel",e=>ptr.delete(e.pointerId));
+cv.addEventListener("wheel",e=>{e.preventDefault();cam.fov=Math.max(35,Math.min(90,cam.fov+e.deltaY*.03));cam.updateProjectionMatrix()},{passive:false});
+function dist(){const a=[...ptr.values()];return Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y)}
+
+const rc=new THREE.Raycaster();let tt,dtxt="";
+function toast(h){const t=$("toast");t.innerHTML=h;t.classList.add("show");clearTimeout(tt);tt=setTimeout(()=>t.classList.remove("show"),2400)}
+function tap(cx,cy){
+ if(cur<0)return;
+ rc.setFromCamera({x:cx/innerWidth*2-1,y:-(cy/innerHeight)*2+1},cam);
+ const d=rc.ray.direction.clone().normalize();
+ if(DBG){const [x,y]=pxOf(d);dtxt="x:"+x+", y:"+y;$("dt").textContent="Room "+(cur+1)+" → "+dtxt;$("dbg").style.display="block";}
+ let best=null,ba=9;
+ ROOMS[cur].hs.forEach(h=>{const a=Math.acos(Math.min(1,d.dot(dirOf(h[2],h[3]))))*DEG,r=h[4]*360/W,n=a/r;if(n<1&&n<ba){ba=n;best=h}});
+ if(!best){toast("🔍 Nothing here");return}
+ const T=team&&TEAMS[team];
+ if(T&&T.room===cur&&T.obj===best[0])toast("🎯 You found a code!<br><b>"+T.code+"</b><br>Enter it with the 🔑 button");
+ else toast("🔍 "+best[1]+": nothing here");
+}
+$("dcopy").onclick=()=>{try{navigator.clipboard.writeText(dtxt)}catch(e){}};
+
+/* code entry */
+let tries=0,lock=false;
+$("tb").onclick=()=>$("cp").classList.toggle("show");
+$("cg").onclick=()=>{
+ if(lock||!team)return;
+ const v=$("ci").value.trim(),T=TEAMS[team];
+ if(v===T.code){done()}
+ else{tries++;$("cm").textContent="❌ Wrong code.";if(tries>=3){tries=0;lock=true;$("cg").disabled=true;let s=30;const iv=setInterval(()=>{$("cm").textContent="Locked for "+s+" s";if(--s<0){clearInterval(iv);lock=false;$("cg").disabled=false;$("cm").textContent=""}},1000)}}
+};
+function done(){
+ try{localStorage.setItem("ctp_"+team,"1")}catch(e){}
+ $("nx").textContent=TEAMS[team].next;$("win").classList.add("show");$("cp").classList.remove("show");
+}
+
+/* start */
+function start(){
+ const T=TEAMS[team];
+ if(T){document.documentElement.style.setProperty("--ac",T.c);$("tn").textContent="Team "+team.toUpperCase();
+  try{if(localStorage.getItem("ctp_"+team)==="1")done()}catch(e){}}
+ else{$("tn").textContent=DBG?"DEBUG MODE":"";}
+ if(DBG)team="red";
+ show(0);
+}
+if(!team&&!DBG){
+ $("pick").classList.add("show");
+ Object.keys(TEAMS).forEach(k=>{const b=document.createElement("button");b.className="tbtn";b.style.background=TEAMS[k].c;b.textContent=k.toUpperCase();b.onclick=()=>{team=k;location.hash=k;$("pick").classList.remove("show");start()};$("pb").appendChild(b)});
+}else start();
+addEventListener("hashchange",()=>location.reload());
+
+function size(){R.setSize(innerWidth,innerHeight,false);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix()}
+addEventListener("resize",size);size();
+const fw=new THREE.Vector3();
+(function loop(){
+ cam.rotation.set(pitch,yaw,0,"YXZ");R.render(S,cam);
+ if(DBG&&dots.length){cam.getWorldDirection(fw);const ppd=innerHeight/cam.fov;
+  dots.forEach(o=>{if(o.d.dot(fw)<.2){o.e.style.display="none";return}
+   const v=o.d.clone().multiplyScalar(10).project(cam),s=o.h[4]*360/W*ppd*2;
+   o.e.style.display="block";o.e.style.left=((v.x+1)/2*innerWidth)+"px";o.e.style.top=((1-v.y)/2*innerHeight)+"px";o.e.style.width=o.e.style.height=s+"px"})}
+ requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
